@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modification>
+   <name>Product Variants</name>
+   <version>2.3</version>
+   <author>miluss</author>
+   <code>productvariants</code>
+   <file path="catalog/model/catalog/product.php">
+      <operation>
+         <search><![CDATA[public function getProductAttributes($product_id)]]></search>
+         <add position="before"><![CDATA[public function getProductVariantproducts($product_id)
+    {
+        $variantproduct_data = array();
+
+        $sql = "
+					SELECT vd.title, (SELECT GROUP_CONCAT(v2p.product_id) FROM " . DB_PREFIX . "variantproducts_to_product v2p WHERE v.variantproduct_id = v2p.variantproduct_id AND v2p.product_id<>'" . (int)$product_id . "') prodIds
+					FROM " . DB_PREFIX . "variantproducts v
+					LEFT JOIN " . DB_PREFIX . "variantproducts_description vd ON (v.variantproduct_id = vd.variantproduct_id)
+					LEFT JOIN " . DB_PREFIX . "variantproducts_to_product v2p ON (v.variantproduct_id = v2p.variantproduct_id)
+					WHERE
+					    v2p.product_id = '" . (int)$product_id . "' AND
+					    vd.language_id = '" . $this->config->get('config_language_id') . "' AND
+					    v.status = '1'
+					ORDER BY v.sort_order, v.variantproduct_id ASC
+					";
+        $variantproduct_query = $this->db->query($sql);
+
+        foreach ($variantproduct_query->rows as $variantproduct) {
+            $products = array();
+            if ($variantproduct['prodIds']) $products = $this->getPorudctsByIds(explode(',', $variantproduct['prodIds']));
+
+            $variantproduct_data[] = array(
+                'title' => $variantproduct['title'],
+                'products' => $products,
+            );
+        }
+
+        return $variantproduct_data;
+    }
+
+    public function getPorudctsByIds($ids)
+    {
+        $sql = "SELECT DISTINCT *, pd.name AS name, p.image, m.name AS manufacturer, (SELECT COUNT(*) AS total FROM " . DB_PREFIX . "review r2 WHERE r2.product_id = p.product_id AND r2.status = '1' GROUP BY r2.product_id) AS reviews, p.sort_order FROM " . DB_PREFIX . "product p LEFT JOIN " . DB_PREFIX . "product_description pd ON (p.product_id = pd.product_id) LEFT JOIN " . DB_PREFIX . "product_to_store p2s ON (p.product_id = p2s.product_id) LEFT JOIN " . DB_PREFIX . "manufacturer m ON (p.manufacturer_id = m.manufacturer_id) WHERE p.product_id IN('" . implode("','", $ids) . "') AND pd.language_id = '" . (int)$this->config->get('config_language_id') . "' AND p.status = '1' AND p.date_available <= NOW() AND p2s.store_id = '" . (int)$this->config->get('config_store_id') . "' ORDER BY p.sort_order";
+        $query = $this->db->query($sql);
+
+        if ($query->num_rows) {
+
+            $products = array();
+            foreach ($query->rows as $row) {
+                $products[] = array(
+                    'product_id' => $row['product_id'],
+                    'name' => $row['name'],
+                    'model' => $row['model'],
+                    'image' => $row['image']
+                );
+            }
+
+            return $products;
+        } else {
+            return false;
+        }
+    }]]></add>
+      </operation>
+   </file>
+    <file path="catalog/controller/product/product.php">
+      <operation>
+         <search position="replace"><![CDATA[$data['column_left'] = $this->load->controller('common/column_left');]]></search>
+         <add><![CDATA[//product variant
+            $data['variantproducts'] = $this->model_catalog_product->getProductVariantproducts($this->request->get['product_id']);
+
+            foreach ($data['variantproducts'] as $k => $variantproduct) {
+                if ($variantproduct['products']) {
+                    foreach ($variantproduct['products'] as $j => $product) {
+                        if ($product['image']) {
+                            $image = $this->model_tool_image->resize($product['image'], 60, 60);
+                        } else {
+                            $image = false;
+                        }
+
+
+                        $product['image'] = $image;
+                     
+						$product['href'] = $this->url->link('product/product', 'product_id=' . $product['product_id']);						
+                        $data['variantproducts'][$k]['products'][$j] = $product;
+                    }
+                }
+            }
+		if (file_exists('catalog/view/theme/' . $this->config->get('config_template') . '/stylesheet/variants.css')) {
+			$this->document->addStyle('catalog/view/theme/' . $this->config->get('config_template') . '/stylesheet/variants.css');
+		} else {
+			$this->document->addStyle('catalog/view/theme/default/stylesheet/variants.css');
+		}		
+    //product variant
+          $data['column_left'] = $this->load->controller('common/column_left');	
+		]]></add>
+      </operation>
+   </file> 
+   <file path="catalog/view/theme/*/template/product/product.tpl">
+      <operation>
+         <search position="replace"><![CDATA[<div id="product">]]></search>
+         <add><![CDATA[<div id="product">			
+			<!--
+product variant
+//-->
+      <?php if ($variantproducts) { ?>	  
+      <?php foreach ($variantproducts as $variantproduct) { ?>
+      <?php if (!empty($variantproduct['products'])) { ?>
+      <h3 class="vp_title"><?php echo $variantproduct['title']; ?>: </h2>	
+	  </br>	
+      <div class="vbox">
+      <?php foreach ($variantproduct['products'] as $product) { ?>
+      <div class="vblock">
+      <?php if ($product['image']) { ?>
+      <div><a href="<?php echo $product['href']; ?>" id="<?php echo $product['product_id']; ?>" data-toggle="tooltip"  title="<?php echo $product['name']; ?>"> <img src="<?php echo $product['image']; ?>" alt="<?php echo $product['name']; ?>" /></a></div>
+	  <?php } ?>		
+      </div>	  
+      <?php } ?>
+      </div>
+      <?php } ?>
+      <?php } ?>
+      <?php } ?> 
+<!--
+product variant
+//-->]]></add>
+      </operation>
+   </file>
+</modification>
